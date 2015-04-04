@@ -9,39 +9,68 @@ import (
 
 type Client struct {
 	conn net.Conn
+	id   int
 	ch   chan<- string
 }
 
 func handleConnection(con net.Conn, msgchan chan string, client chan Client) {
 	ch := make(chan string)
-	client <- Client{con, ch}
+	client <- Client{con, -1, ch}
 	buffer := make([]byte, 4096)
-	for {
-		n, err := con.Read(buffer)
-		if err != nil {
-			//TODO handle error
-			fmt.Println(err)
-			con.Close()
-			break
+	go func() {
+		for {
+			n, err := con.Read(buffer)
+			if err != nil {
+				//TODO handle error
+				fmt.Println(err)
+				con.Close()
+				break
+			}
+
+			msgchan <- string(buffer[0:n])
+			fmt.Println("after msgchan")
+
+			/*		msg := <-ch
+					n, err = con.Write([]byte(msg))
+					if err != nil {
+						fmt.Println(err)
+						con.Close()
+						break
+
+					}
+			*/
+
 		}
+	}()
 
-		msgchan <- string(buffer[0:n])
-
-	}
+	go func() {
+		for {
+			msg := <-ch
+			_, err := con.Write([]byte(msg))
+			if err != nil {
+				fmt.Println(err)
+				con.Close()
+				break
+			}
+		}
+	}()
 
 }
 
 func handleMsg(msgchan <-chan string, addclient <-chan Client) {
+	num := 1
 	clients := make(map[net.Conn]chan<- string)
 	for {
 		select {
 		case msg := <-msgchan:
 			for _, ch := range clients {
-				go func(mch chan<- string) { mch <- "\033" + msg + "\033\r\n" }(ch)
+				go func(mch chan<- string) { mch <- msg }(ch)
 
 			}
 		case client := <-addclient:
+			client.id = num
 			clients[client.conn] = client.ch
+			num++
 		}
 	}
 
