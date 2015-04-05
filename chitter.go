@@ -20,26 +20,31 @@ type Msg struct {
 	dst string
 }
 
-func handleConnection(con net.Conn, id int, msgchan chan Msg, addclient chan Client) {
+func handleConnection(con net.Conn, id int, msgchan chan Msg,
+	addclient chan Client, rmclient chan Client) {
 	ch := make(chan string)
 	client := Client{con, id, ch}
 	addclient <- client
 	buffer := make([]byte, 4096)
+
+	welcome := "Welcome to chatroom, your id is " + strconv.Itoa(id) + ".\n"
+	_, err := con.Write([]byte(welcome))
+	if err != nil {
+		fmt.Println(err)
+		con.Close()
+	}
 	go func() {
 		for {
 			n, err := con.Read(buffer)
 			if err != nil {
-				//TODO handle error
 				fmt.Println(err)
 				con.Close()
 				break
 			}
 
 			msg := parseMsg(string(buffer[0:n]), id)
-			msgchan <- msg
 
-			fmt.Println("after msgchan")
-
+			msgchan <- formatMsg(msg)
 			/*		msg := <-ch
 					n, err = con.Write([]byte(msg))
 					if err != nil {
@@ -65,6 +70,14 @@ func handleConnection(con net.Conn, id int, msgchan chan Msg, addclient chan Cli
 		}
 	}()
 
+}
+
+func formatMsg(msg Msg) Msg {
+	i := 0
+	for ; msg.msg[i] == ' '; i++ {
+	}
+	msg.msg = msg.msg[i:]
+	return msg
 }
 
 func parseMsg(msg string, id int) Msg {
@@ -109,7 +122,7 @@ func parseMsg(msg string, id int) Msg {
 	return message
 }
 
-func handleMsg(msgchan <-chan Msg, addclient <-chan Client) {
+func handleMsg(msgchan <-chan Msg, addclient <-chan Client, rmclient <-chan Client) {
 	clients := make(map[int]Client)
 	for {
 		select {
@@ -120,11 +133,21 @@ func handleMsg(msgchan <-chan Msg, addclient <-chan Client) {
 				}
 			} else {
 				dst, _ := strconv.Atoi(msg.dst)
-				client := clients[dst]
-				go func(mch chan<- string) { mch <- msg.src + ": " + msg.msg }(client.ch)
+				_, ok := clients[dst]
+				if ok {
+
+					client := clients[dst]
+					go func(mch chan<- string) { mch <- msg.src + ": " + msg.msg }(client.ch)
+				} else {
+					src, _ := strconv.Atoi(msg.src)
+					client := clients[src]
+					go func(mch chan<- string) { mch <- "Sorry, target user is offline\n" }(client.ch)
+				}
 			}
 		case client := <-addclient:
 			clients[client.id] = client
+		case client := <-rmclient:
+			delete(clients, client.id)
 		}
 	}
 
@@ -151,9 +174,10 @@ func main() {
 	}
 
 	addchan := make(chan Client)
+	rmchan := make(chan Client)
 
 	publicMessages := make(chan Msg, 10)
-	go handleMsg(publicMessages, addchan)
+	go handleMsg(publicMessages, addchan, rmchan)
 
 	num := 0
 	for {
@@ -163,6 +187,6 @@ func main() {
 		}
 
 		num++
-		go handleConnection(conn, num, publicMessages, addchan)
+		go handleConnection(conn, num, publicMessages, addchan, rmchan)
 	}
 }
