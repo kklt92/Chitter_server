@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"net"
 	"os"
-	//	"strconv"
+	"strconv"
+	"strings"
 )
 
 type Client struct {
@@ -13,9 +14,16 @@ type Client struct {
 	ch   chan<- string
 }
 
-func handleConnection(con net.Conn, msgchan chan string, client chan Client) {
+type Msg struct {
+	msg string
+	src string
+	dst string
+}
+
+func handleConnection(con net.Conn, id int, msgchan chan Msg, addclient chan Client) {
 	ch := make(chan string)
-	client <- Client{con, -1, ch}
+	client := Client{con, id, ch}
+	addclient <- client
 	buffer := make([]byte, 4096)
 	go func() {
 		for {
@@ -27,7 +35,9 @@ func handleConnection(con net.Conn, msgchan chan string, client chan Client) {
 				break
 			}
 
-			msgchan <- string(buffer[0:n])
+			msg := parseMsg(string(buffer[0:n]), id)
+			msgchan <- msg
+
 			fmt.Println("after msgchan")
 
 			/*		msg := <-ch
@@ -57,20 +67,64 @@ func handleConnection(con net.Conn, msgchan chan string, client chan Client) {
 
 }
 
-func handleMsg(msgchan <-chan string, addclient <-chan Client) {
-	num := 1
-	clients := make(map[net.Conn]chan<- string)
+func parseMsg(msg string, id int) Msg {
+	message := Msg{"", "", ""}
+	i := 0
+	for i = 0; msg[i] >= '0' && msg[i] <= '9'; i++ {
+	}
+	for ; msg[i] == ' '; i++ {
+	}
+	if msg[i] == ':' {
+		message.dst = msg[0:i]
+		message.msg = msg[i+1:]
+		message.src = strconv.Itoa(id)
+		return message
+	}
+
+	if len(msg) >= 4 {
+		if strings.EqualFold(msg[0:3], "ALL") {
+			for i = 3; msg[i] == ' '; i++ {
+			}
+			if msg[i] == ':' {
+				message.dst = "ALL"
+				message.src = strconv.Itoa(id)
+				message.msg = msg[i+1:]
+				return message
+			}
+		}
+	}
+
+	if len(msg) >= 7 {
+		if msg[0:7] == "whoami:" {
+			message.dst = strconv.Itoa(id)
+			message.src = "chitter"
+			message.msg = strconv.Itoa(id) + "\n"
+			return message
+		}
+	}
+
+	message.dst = "ALL"
+	message.src = strconv.Itoa(id)
+	message.msg = msg
+	return message
+}
+
+func handleMsg(msgchan <-chan Msg, addclient <-chan Client) {
+	clients := make(map[int]Client)
 	for {
 		select {
 		case msg := <-msgchan:
-			for _, ch := range clients {
-				go func(mch chan<- string) { mch <- msg }(ch)
-
+			if msg.dst == "ALL" {
+				for _, client := range clients {
+					go func(mch chan<- string) { mch <- msg.src + ": " + msg.msg }(client.ch)
+				}
+			} else {
+				dst, _ := strconv.Atoi(msg.dst)
+				client := clients[dst]
+				go func(mch chan<- string) { mch <- msg.src + ": " + msg.msg }(client.ch)
 			}
 		case client := <-addclient:
-			client.id = num
-			clients[client.conn] = client.ch
-			num++
+			clients[client.id] = client
 		}
 	}
 
@@ -98,15 +152,17 @@ func main() {
 
 	addchan := make(chan Client)
 
-	publicMessages := make(chan string, 10)
+	publicMessages := make(chan Msg, 10)
 	go handleMsg(publicMessages, addchan)
 
+	num := 0
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
 			fmt.Println(err)
 		}
 
-		go handleConnection(conn, publicMessages, addchan)
+		num++
+		go handleConnection(conn, num, publicMessages, addchan)
 	}
 }
