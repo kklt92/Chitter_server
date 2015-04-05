@@ -160,15 +160,16 @@ func main() {
 	}
 
 	/* Read specific port. */
-	port := os.Args[1]
-	//	if strconv.Atoi(port) > 65535 || strconv.Atoi(port) < 1023 {
-	//		fmt.Println("Port range from 1024 - 65535")
-	//		return
-	//	}
+	port, _ := strconv.Atoi(os.Args[1])
 
-	ln, err := net.Listen("tcp", ":"+port)
+	if port > 65535 || port < 1023 {
+		fmt.Println("Port range from 1024 - 65535")
+		return
+	}
+
+	ln, err := net.Listen("tcp", ":"+os.Args[1])
 	if err != nil {
-		fmt.Println("cannot listen on " + port + ", please change to another port")
+		fmt.Println("cannot listen on " + os.Args[1] + ", please change to another port")
 		fmt.Println(err)
 		return
 	}
