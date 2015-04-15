@@ -6,16 +6,24 @@ It is a chatroom with private message support. Implemented in Go.
 Usage
 -----------------
 1. Server side:
-Running server directly:
-`go run chitter.go [port]`
 
-Or compile it and run:
-`go build chitter.go`
-`./chitter [port] //port should be larger than 1024.`
+  Running server directly:
+  
+  `go run chitter.go [port]`
+
+  Or compile it and run:
+  
+  `go build chitter.go`
+  
+  `./chitter [port] //port should be larger than 1024.`
 
 2. Client side:
-using nc:
-`nc server_ip_address port`
-or using telnet:
-`telnet server_ip_address port`
+  
+  using nc:
+
+  `nc server_ip_address port`
+  
+  or using telnet:
+  
+  `telnet server_ip_address port`
 
