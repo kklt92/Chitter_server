@@ -8,12 +8,29 @@ import (
 	"strings"
 )
 
+
+func helpInfo() string{
+  helpInfo := "Usage:\n" +        
+  "/rooms\t\t\t\tDisplay active rooms.\n" + 
+  "/join <room_name>\t\tJoin chat room.\n" +
+  "/leave\t\t\t\tLeave current chat room.\n" +
+  "/quit\t\t\t\tQuit.\n" +
+  "/tell <user_name> <message>\tSend private message to target user.\n" +
+  "/reply <message>\t\tReply to last user sent you private message.\n" +
+  "/help\t\t\t\tDisplay this help infomation.\n" +
+  "/whoami\t\t\t\tDisplay user infomation.\n" + 
+  "<message>\t\t\tSend message to chat room, seen by all user in same chat room.\n"
+
+  return helpInfo
+}
+
+
 /**
- * each client has a Client.
- */
+* each client has a Client.
+*/
 type Client struct {
-	conn net.Conn      // connection info
-	id   int           // user ID
+  conn net.Conn      // connection info
+  id   int           // user ID
   name string        // username
   room *Room          // chat room
 	ch   chan<- string // output channel
@@ -92,7 +109,7 @@ func NewServer(name string) *Server {
  * Add client to Client channel. Remove it as well when disconnected
  */
 func handleConnection(con net.Conn, id int, s *Server) {
-	welcome := "<= Welcome to " + s.name + "chat server.\n"
+	welcome := "<= Welcome to " + s.name + " chat server.\n"
 	_, err := con.Write([]byte(welcome))
 	if err != nil {
 		fmt.Println(err)
@@ -163,6 +180,7 @@ func handleConnection(con net.Conn, id int, s *Server) {
   * always read from connection.
   */
   go func() {
+    con.Write([]byte(helpInfo()))
     for {
       con.Write([]byte("=> "))
       n, err := con.Read(buffer)
@@ -198,7 +216,6 @@ func handleConnection(con net.Conn, id int, s *Server) {
       break
     }
   }
-
 }
 
 func isValidName(name string) bool {
@@ -231,17 +248,6 @@ func formatMsg(msg Msg) Msg {
 }
 
 func parseCMD(str string, sender *Client) Cmd {
-  HelpInfo := "Usage:\n" +        
-               "/rooms\t\t\t\tDisplay active rooms.\n" + 
-               "/join <room_name>\t\tJoin chat room.\n" +
-               "/leave\t\t\t\tLeave current chat room.\n" +
-               "/quit\t\t\t\tQuit.\n" +
-               "/tell <user_name> <message>\tSend private message to target user.\n" +
-               "/reply <message>\t\tReply to last user sent you private message.\n" +
-               "/help\t\t\t\tDisplay this help infomation.\n" +
-               "<message>\t\t\tSend message to chat room, seen by all user in same chat room.\n"
-               
-
   cmd := Cmd{"", sender.name, "", nil}
 
   firstWordIndex := strings.Index(str, " ")
@@ -294,7 +300,12 @@ func parseCMD(str string, sender *Client) Cmd {
   case "help", "h":
     cmd.command = "help"
     cmd.msg = new(Msg)
-    cmd.msg.msg = HelpInfo
+    cmd.msg.msg = helpInfo()
+
+  case "whoami":
+    cmd.command = "whoami"
+    cmd.dst = cmd.src
+    cmd.msg = new(Msg)
     
   default:
     cmd.command = "error"
@@ -307,6 +318,7 @@ func parseCMD(str string, sender *Client) Cmd {
 }
 
 func errCMD(cmd *Cmd, err string) {
+  cmd.command = "error"
   if cmd.msg == nil {
     cmd.msg = new(Msg)
   }
@@ -323,6 +335,20 @@ func parseMsg(msg string, sender string) Msg {
 	message.src = sender
 	message.msg = msg
 	return message
+}
+
+func getClientInfo(client *Client) string {
+  var currRoomName string
+  if client.room == nil {
+    currRoomName = ""
+  } else {
+    currRoomName = client.room.name
+  }
+  info := "Name:\t\t" + client.name + "\n" + 
+           "Current room:\t\t" + currRoomName + "\n"
+          //+ "Connection info:\t" + string(client.conn.RemoteAddr()) + "\n"
+
+  return info
 }
 
 func createRoom(client *Client, roomName string, s *Server) *Room {
@@ -370,7 +396,7 @@ func (s *Server) HandleMsg() {
 				}
 			}
     case cmd := <- s.cmdchan:
-      handleCMD(cmd, s)
+      s.handleCMD(cmd)
 
 		// When add client to client channel
 		case client := <-s.addchan:
@@ -405,7 +431,7 @@ func removeFromRoom(client *Client) {
   }
 }
 
-func handleCMD(cmd Cmd, s *Server) {
+func (s *Server) handleCMD(cmd Cmd) {
   sender := s.clients[cmd.src]
   switch cmd.command {
   case "join":
@@ -415,7 +441,13 @@ func handleCMD(cmd Cmd, s *Server) {
       break
     }
     addToRoom(sender, room)
-    go func(mch chan<- string) { mch <- "Entering room: " + room.name +"\n" }(sender.ch)
+    replyStr := "Entering room: " + room.name + "\n" 
+    for clientName, client := range room.clients {
+      replyStr += "* " + clientName + "\n"
+      go func(mch chan<- string) { mch <- "* new user joined "+room.name+ ": " + sender.name + "\n"}(client.ch)
+    }
+    replyStr += "End of list.\n"
+    go func(mch chan<- string) { mch <- replyStr }(sender.ch)
   case "leave":
     room := sender.room
     if room == nil {
@@ -424,7 +456,7 @@ func handleCMD(cmd Cmd, s *Server) {
     }
     removeFromRoom(sender)
     for _, client := range room.clients {
-      go func(mch chan<- string) { mch <- "User has left chat: " + sender.name+"\n" }(client.ch)
+      go func(mch chan<- string) { mch <- "User has left "+room.name+": " + sender.name+"\n" }(client.ch)
     }
   case "rooms":
     replyStr := "Active rooms are:\n"
@@ -442,6 +474,9 @@ func handleCMD(cmd Cmd, s *Server) {
 
   case "help":
     go func(mch chan<- string) { mch <- cmd.msg.msg + "\n"}(sender.ch)
+    
+  case "whoami":
+    go func(mch chan<- string) { mch <- getClientInfo(sender) + "\n"}(sender.ch)
     
 
   case "error":
