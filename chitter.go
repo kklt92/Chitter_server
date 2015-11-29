@@ -219,7 +219,10 @@ func handleConnection(con net.Conn, id int, s *Server) {
 }
 
 func isValidName(name string) bool {
-  if len(name) == 0 {
+  if len(name) == 0 || len(name) > 100{
+    return false
+  }
+  if !((name[0] >= 'a' && name[0] <= 'z') || (name[0] >= 'A' && name[0] <= 'Z')) {
     return false
   }
   for i:=0; i<len(name); i++ {
