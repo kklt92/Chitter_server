@@ -118,7 +118,7 @@ func handleConnection(con net.Conn, id int, s *Server) {
 
 	buffer := make([]byte, 4096)
   
-  login_name := "<= Login Name?\n"
+  login_name := "<= Login Name?\n=> "
 	_, err = con.Write([]byte(login_name))
 	if err != nil {
 		fmt.Println(err)
@@ -130,7 +130,6 @@ func handleConnection(con net.Conn, id int, s *Server) {
   client := Client{con, id, client_name, nil ,ch, nil}
 
   for {
-    con.Write([]byte("=> "))
     n, err := con.Read(buffer)
     if err != nil {
       fmt.Println(err)
@@ -140,7 +139,7 @@ func handleConnection(con net.Conn, id int, s *Server) {
     client_name = string(buffer[0:n])
     client_name = client_name[0: len(client_name)-2]
     if !isValidName(client_name) {
-      login_name = "<= Sorry, " + client_name + " is not valid, please only contains a-zA-Z0-9 or _ or -\n"
+      login_name = "<= Sorry, " + client_name + " is not valid, please only contains a-zA-Z0-9 or _ or -\n=> "
       _, err := con.Write([]byte(login_name))
       if err != nil {
         fmt.Println(err)
@@ -161,7 +160,7 @@ func handleConnection(con net.Conn, id int, s *Server) {
       }
       break
     } else {
-      login_name = "<= Sorry, " + client_name + " has been taken, please choose another name\n"
+      login_name = "<= Sorry, " + client_name + " has been taken, please choose another name\n=> "
       _, err := con.Write([]byte(login_name))
       if err != nil {
         fmt.Println(err)
@@ -180,9 +179,8 @@ func handleConnection(con net.Conn, id int, s *Server) {
   * always read from connection.
   */
   go func() {
-    con.Write([]byte(helpInfo()))
+    con.Write([]byte(helpInfo() + "=> "))
     for {
-      con.Write([]byte("=> "))
       n, err := con.Read(buffer)
       if err != nil {
         fmt.Println(err)
@@ -192,6 +190,7 @@ func handleConnection(con net.Conn, id int, s *Server) {
 
       str := strings.TrimSpace(string(buffer[0:n]))
       if len(str) == 0 {
+        con.Write([]byte("=> "))
       } else if str[0] == '/' {
         cmd := parseCMD(str[1:len(str)], &client)
         s.cmdchan <- cmd
@@ -209,6 +208,7 @@ func handleConnection(con net.Conn, id int, s *Server) {
     if msg[len(msg)-1] != '\n' {
       msg = msg + "\n"
     }
+    msg += "=> "
     _, err := con.Write([]byte(msg))
     if err != nil {
       fmt.Println(err)
@@ -382,7 +382,8 @@ func (s *Server) HandleMsg() {
             go func(mch chan<- string) { mch <- "[" + msg.src +"]" + ": " + msg.msg }(client.ch)
           }
         } else {
-          // TODO when sender is not in a chat room
+          go func(mch chan<- string) { mch <- "Please join a room first" }(sender.ch)
+          
         }
       } else {
 				dst:= msg.dst
@@ -412,6 +413,7 @@ func (s *Server) HandleMsg() {
     // When remove client from client channel
     case client := <-s.rmchan:
       fmt.Printf("Client %v disconnected\n", client.conn.RemoteAddr())
+      removeFromRoom(client)
       delete(s.clients, client.name)
       client.conn.Close()
     }
