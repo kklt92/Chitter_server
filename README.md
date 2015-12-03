@@ -9,7 +9,7 @@ Usage
 
   Running server directly:
   
-  `go run chitter.go [port]`
+  `go run chitter.go [port] [chat_room name]`
 
   Or compile it and run:
   
