@@ -9,7 +9,10 @@ import (
 )
 
 
-func helpInfo() string{
+/**
+ * @return string, print helper.
+ */
+func helpInfo() string {
   helpInfo := "Usage:\n" +        
   "/rooms\t\t\t\tDisplay active rooms.\n" + 
   "/join <room_name>\t\tJoin chat room.\n" +
@@ -46,6 +49,9 @@ type Msg struct {
 	dst string
 }
 
+/**
+ * This is command, use for all command line start with /.
+ */
 type Cmd struct {
   command string
   src     string
@@ -54,7 +60,7 @@ type Cmd struct {
 }
 
 /**
- * 
+ * chat room.
  */
 type Room struct {
   name string     // room name
@@ -62,6 +68,9 @@ type Room struct {
   clients  map[string]*Client  // online clients in current room
 }
 
+/**
+ * constructor of Room
+ */
 func NewRoom(name string) *Room {
   if len(name) <= 0 {
     return nil
@@ -74,7 +83,7 @@ func NewRoom(name string) *Room {
 }
 
 /**
- *
+ * struct of Server
  */
 type Server struct {
   name string                 // chat server name
@@ -87,6 +96,9 @@ type Server struct {
   cmdchan chan Cmd
 }
 
+/**
+ * constructor of Server
+ */
 func NewServer(name string) *Server {
   if len(name) <= 0 {
     name = "XYZ"
@@ -137,7 +149,7 @@ func handleConnection(con net.Conn, id int, s *Server) {
     }
 
     client_name = string(buffer[0:n])
-    client_name = client_name[0: len(client_name)-2]
+    client_name = parseName(client_name)
     if !isValidName(client_name) {
       login_name = "<= Sorry, " + client_name + " is not valid, please only contains a-zA-Z0-9 or _ or -\n=> "
       _, err := con.Write([]byte(login_name))
@@ -218,6 +230,30 @@ func handleConnection(con net.Conn, id int, s *Server) {
   }
 }
 
+/**
+ * parse name
+ */
+func parseName(name string) string {
+  if len(name) == 0 {
+    return name
+  }
+
+  ret := name
+  if len(name) >= 2 {
+    length := len(name)
+    if name[length-1] ==  '\x0A' && name[length-2] == '\x0D' {
+      ret = name[0:length-2]
+    }
+  }
+  for i:=0; i<len(ret); i++ {
+    fmt.Print(ret[i])
+  }
+  fmt.Println()
+  return ret 
+}
+/**
+ * check if the name is valid.
+ */
 func isValidName(name string) bool {
   if len(name) == 0 || len(name) > 100{
     return false
@@ -320,6 +356,9 @@ func parseCMD(str string, sender *Client) Cmd {
   return cmd
 }
 
+/**
+ * helper function to construct a error message.
+ */
 func errCMD(cmd *Cmd, err string) {
   cmd.command = "error"
   if cmd.msg == nil {
@@ -354,6 +393,10 @@ func getClientInfo(client *Client) string {
   return info
 }
 
+/**
+ * create a new room.
+ * TODO could be improved and allow user create new room by himself.
+ */
 func createRoom(client *Client, roomName string, s *Server) *Room {
   if s.rooms[roomName] != nil {
     // exsiting room name
@@ -366,7 +409,13 @@ func createRoom(client *Client, roomName string, s *Server) *Room {
   return r
 }
 
-// Send message to different channel
+/**
+ * Send message to different channel
+ * central thread handle with all channel. 
+ * serial all manipulate of critical section.
+ * Could be improved by using 2 phase locking.
+ * But for current use case, enough performance.
+ */
 func (s *Server) HandleMsg() {
 	for {
 		select {
@@ -436,6 +485,9 @@ func removeFromRoom(client *Client) {
   }
 }
 
+/**
+ * handle all command line. called by HandleMsg() only
+ */
 func (s *Server) handleCMD(cmd Cmd) {
   sender := s.clients[cmd.src]
   switch cmd.command {
